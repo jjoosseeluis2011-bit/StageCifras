@@ -16,7 +16,7 @@
 --white: #FFFFFF;
 --gray: #9E9E9E;
 }
-• {
+* {
 box-sizing: border-box;
 margin: 0;
 padding: 0;
@@ -127,6 +127,7 @@ font-size: 11px; font-weight: 700; border: 1px solid #262626;
 .song-card {
 display: flex; gap: 10px; align-items: center; background: var(--surface);
 border-radius: 14px; padding: 11px; margin-bottom: 8px; border: 1px solid #252525;
+cursor: pointer;
 }
 .song-card .cover {
 width: 44px; height: 44px; background: var(--surface2); border-radius: 10px;
@@ -570,7 +571,7 @@ return state.settings.accidental === 'flat' ? NOTES_FLAT[t] : NOTES_SHARP[t];
 function trChord(token, steps) {
 if (!token) return token;
 return token.split('/').map(function(part) {
-var m = /^(A-G?)(.*)$`/.exec(part);
+var m = /^([A-G][#b]?)(.*)$/.exec(part);
 if (!m) return part;
 return trNote(m[1], steps) + m[2];
 }).join('/');
@@ -578,15 +579,15 @@ return trNote(m[1], steps) + m[2];
 
 function formatCifraLine(line, steps) {
 if (line.indexOf('[') !== -1 && line.indexOf(']') !== -1) {
-return line.replace(/[([^]]+)]/g, function(full, inside) {
+return line.replace(/\[([^\]]+)\]/g, function(full, inside) {
 var c = inside.trim();
-if (/^A-G?[mM0-9a-zA-Z#b+-/()]*`$/.test(c) && c.length <= 11) {
+if (/^[A-G][#b]?[mM0-9a-zA-Z#b+\-\/()]*$/.test(c) && c.length <= 11) {
 return '<span class="chord">[' + trChord(c, steps) + ']</span>';
 }
 return '<span class="section-label">[' + c + ']</span>';
 });
 }
-return line || ' ';
+return line || '\u00A0';
 }
 
 function formatCifraFull(text, steps) {
@@ -614,7 +615,7 @@ if (viewId === 'view-midi') appInitMidi();
 }
 
 function makeSongCard(s) {
-return '<div class="song-card" onclick="appOpenDetail('' + s.id + '')">' +
+return '<div class="song-card" onclick="appOpenDetail(\'' + s.id + '\')">' +
 '<div class="cover">' + (s.key || '🎵') + '</div>' +
 '<div class="song-info">' +
 '<div class="name">' + s.title + '</div>' +
@@ -652,7 +653,7 @@ document.getElementById('home-favs-list').innerHTML = favs.map(makeSongCard).joi
 function appRenderLibrary() {
 var q = (document.getElementById('search-input').value || '').toLowerCase();
 var list = state.songs.filter(function(s) {
-return s.title.toLowerCase().indexOf(q) !== -1 || s.artist.toLowerCase().indexOf(q) !== -1;
+return s.title.toLowerCase().indexOf(q) !== -1 || s.artist.toLowerCase().indexOf(q) !== -1 || (s.patch && s.patch.toLowerCase().indexOf(q) !== -1);
 });
 document.getElementById('library-list').innerHTML = list.map(makeSongCard).join('');
 }
@@ -730,7 +731,7 @@ saveAll(); appNav('view-library');
 /* SETLISTS */
 function appRenderSetlists() {
 document.getElementById('setlists-list').innerHTML = state.setlists.map(function(sl) {
-return '<div class="song-card" onclick="appOpenSetlist('' + sl.id + '')">' +
+return '<div class="song-card" onclick="appOpenSetlist(\'' + sl.id + '\')">' +
 '<div class="cover">📁</div>' +
 '<div class="song-info"><div class="name">' + sl.name + '</div><div class="artist">' + sl.songIds.length + ' músicas</div></div>' +
 '</div>';
@@ -777,7 +778,7 @@ var s = state.songs.find(function(x) { return x.id === state.currentSongId; });
 if (!s) return;
 document.getElementById('stage-title').textContent = s.title;
 document.getElementById('stage-artist').textContent = s.artist + ' • Tom: ' + trChord(s.key, state.transposition);
-document.getElementById('stage-trans-val').textContent = state.transposition === 0 ? 'Orig' : state.transposition;
+document.getElementById('stage-trans-val').textContent = state.transposition === 0 ? 'Orig' : (state.transposition > 0 ? '+' + state.transposition : state.transposition);
 
 var banner = document.getElementById('stage-setup-banner');
 if (s.patch || s.bpm) {
@@ -788,6 +789,7 @@ banner.textContent = (s.patch ? '🎹 ' + s.patch + ' ' : '') + (s.bpm ? '⏱ ' 
 var content = document.getElementById('stage-content');
 content.style.fontSize = state.settings.fontSize + 'px';
 content.classList.toggle('two-cols', state.settings.twoColumns);
+document.getElementById('btn-stage-cols').classList.toggle('active', state.settings.twoColumns);
 
 var isPage = state.settings.pedalMode === 'page';
 content.classList.toggle('paged-mode', isPage);
@@ -798,7 +800,8 @@ document.getElementById('btn-autoscroll').style.display = isPage ? 'none' : 'inl
 var ind = document.getElementById('stage-page-indicator');
 if (isPage) {
 var lines = String(s.lyrics).split(/\r?\n/);
-var maxL = Math.max(5, Math.floor((content.clientHeight - 95) / (state.settings.fontSize * 1.6)) * (state.settings.twoColumns ? 2 : 1));
+var availH = content.clientHeight || (window.innerHeight - 180);
+var maxL = Math.max(5, Math.floor((availH - 95) / (state.settings.fontSize * 1.6)) * (state.settings.twoColumns ? 2 : 1));
 state.stagePages = [];
 for (var i = 0; i < lines.length; i += maxL) {
 state.stagePages.push(lines.slice(i, i + maxL).map(function(l) { return formatCifraLine(l, state.transposition); }).join('\n'));
@@ -851,18 +854,22 @@ function appExitStage() {
 if (state.stageLocked) { showToast('Destrave o cadeado 🔒 primeiro!'); return; }
 clearInterval(state.scrollTimer); state.scrollTimer = null;
 clearInterval(state.metroTimer); state.metroTimer = null;
+document.getElementById('btn-stage-metro').classList.remove('active');
+document.getElementById('btn-autoscroll').classList.remove('active');
 appNav('view-detail');
 }
 function appToggleMetro() {
 if (state.metroTimer) {
 clearInterval(state.metroTimer); state.metroTimer = null;
 document.getElementById('stage-metronome-bar').className = '';
+document.getElementById('btn-stage-metro').classList.remove('active');
 return;
 }
 var s = state.songs.find(function(x) { return x.id === state.currentSongId; });
 var bpm = (s && s.bpm) ? s.bpm : 80;
 var ms = Math.round(60000 / bpm);
 var bar = document.getElementById('stage-metronome-bar');
+document.getElementById('btn-stage-metro').classList.add('active');
 state.metroTimer = setInterval(function() {
 bar.className = 'on';
 setTimeout(function() { bar.className = ''; }, 110);
@@ -870,7 +877,13 @@ setTimeout(function() { bar.className = ''; }, 110);
 showToast('Metrônomo: ' + bpm + ' BPM');
 }
 function appToggleScroll() {
-if (state.scrollTimer) { clearInterval(state.scrollTimer); state.scrollTimer = null; return; }
+if (state.scrollTimer) {
+clearInterval(state.scrollTimer);
+state.scrollTimer = null;
+document.getElementById('btn-autoscroll').classList.remove('active');
+return;
+}
+document.getElementById('btn-autoscroll').classList.add('active');
 state.scrollTimer = setInterval(function() {
 document.getElementById('stage-content').scrollTop += 1;
 }, 35);
@@ -878,7 +891,6 @@ document.getElementById('stage-content').scrollTop += 1;
 
 /* TECLADO MIDI COM SOM REAL */
 var audioCtx = null;
-var activeMidi = {};
 
 function playNoteSound(note) {
 try {
